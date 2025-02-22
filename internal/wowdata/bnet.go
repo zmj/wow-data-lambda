@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,18 +17,17 @@ type bnetClient struct {
 	accessToken string
 }
 
-const bnetOAuthURL = "https://oauth.battle.net/token"
-
 var clientCredentials = (url.Values{"grant_type": {"client_credentials"}}).Encode()
 
-func newBnet(ctx context.Context, clientID, clientSecret string) (*bnetClient, error) {
+func newBnet(ctx context.Context, o oauthClient) (*bnetClient, error) {
 	hc := http.Client{}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, bnetOAuthURL, strings.NewReader(clientCredentials))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://oauth.battle.net/token", strings.NewReader(clientCredentials))
 	if err != nil {
 		return nil, fmt.Errorf("create oauth token request: %w", err)
 	}
-	password := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", clientID, clientSecret)))
+	password := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", o.ClientID, o.ClientSecret)))
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", password))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	res, err := hc.Do(req)
 	if err != nil {
@@ -36,7 +36,11 @@ func newBnet(ctx context.Context, clientID, clientSecret string) (*bnetClient, e
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("oauth token error response: %v %v", res.StatusCode, res.Status)
+		var body string
+		if b, err := io.ReadAll(res.Body); err == nil {
+			body = string(b)
+		}
+		return nil, fmt.Errorf("oauth token error response: %v %v", res.Status, body)
 	}
 
 	var tokenRes tokenResponse
